@@ -1,0 +1,100 @@
+#autoload
+
+# zskk-init -- initialize plugin state, configuration, and widget placeholders.
+function zskk-init {
+  emulate -L zsh -o extended_glob
+
+  if [[ -n ${_ZSKK_INITIALIZED:-} ]]; then
+    return 0
+  fi
+  typeset -g _ZSKK_INITIALIZED=1
+
+  zskk::load-config "$@"
+  zskk::prepare-state
+  zskk::install-widgets
+}
+
+# Load plugin configuration from zstyle and environment variables.
+function zskk::load-config {
+  emulate -L zsh
+
+  typeset -gA ZSKK_CONFIG
+
+  local value
+  if zstyle -s ':zskk:dict' path value; then
+    ZSKK_CONFIG[dict_path]="${value}"
+  elif [[ -n ${ZSKK_DICT_PATH:-} ]]; then
+    ZSKK_CONFIG[dict_path]="${ZSKK_DICT_PATH}"
+  else
+    ZSKK_CONFIG[dict_path]="${HOME}/.zskk-jisyo"
+  fi
+
+  if zstyle -s ':zskk:init' mode value; then
+    ZSKK_CONFIG[initial_mode]="${value}"
+  else
+    ZSKK_CONFIG[initial_mode]="hiragana"
+  fi
+
+  if zstyle -s ':zskk:keymap' map value; then
+    ZSKK_CONFIG[keymap]="${value}"
+  else
+    ZSKK_CONFIG[keymap]="${${(M)KEYMAP:#(viins|main|emacs)}:-main}"
+  fi
+}
+
+# Prepare top-level state containers. Detailed implementation comes later.
+function zskk::prepare-state {
+  emulate -L zsh
+
+  typeset -gA ZSKK_STATE
+  ZSKK_STATE=(
+    mode "${ZSKK_CONFIG[initial_mode]}"
+    composing ""
+    okuri ""
+    candidates ""
+  )
+
+  typeset -gA ZSKK_CACHE
+  ZSKK_CACHE=()
+}
+
+# Register placeholder widgets so future steps can replace them with real logic.
+function zskk::install-widgets {
+  emulate -L zsh
+
+  typeset -ga ZSKK_BOUND_WIDGETS
+  ZSKK_BOUND_WIDGETS=()
+
+  local keymap="${ZSKK_CONFIG[keymap]}"
+  local -a base_widgets=(
+    self-insert
+    backward-delete-char
+    accept-line
+    vi-cmd-mode
+  )
+
+  local widget
+  for widget in ${base_widgets}; do
+    local zle_name="zskk-${widget}"
+    if ! zle -l | grep -Fxq -- "${zle_name}"; then
+      zle -N "${zle_name}" zskk::widget-pass-through
+    fi
+    ZSKK_BOUND_WIDGETS+=("${keymap}:${widget}:${zle_name}")
+  done
+
+  # Bindkey operations are deferred until the conversion widgets are implemented.
+}
+
+# Simple placeholder widget that forwards to the original ZLE widget.
+function zskk::widget-pass-through {
+  emulate -L zsh
+
+  if [[ -n ${WIDGET:-} ]]; then
+    local original=${WIDGET#zskk-}
+    if zle -la | grep -Fxq -- "${original}"; then
+      zle "${original}" -- "$@"
+      return $?
+    fi
+  fi
+  return 0
+}

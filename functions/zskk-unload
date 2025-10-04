@@ -1,0 +1,26 @@
+#autoload
+
+# zskk-unload -- revert widget bindings and reset globals.
+function zskk-unload {
+  emulate -L zsh -o extended_glob
+
+  if [[ -z ${_ZSKK_INITIALIZED:-} ]]; then
+    return 0
+  fi
+
+  if (( ${#ZSKK_BOUND_WIDGETS[@]} )); then
+    local entry alias
+    for entry in ${ZSKK_BOUND_WIDGETS[@]}; do
+      alias=${entry##*:}
+      if [[ -n ${alias:-} ]] && zle -l | grep -Fxq -- "${alias}"; then
+        zle -D "${alias}"
+      fi
+    done
+  fi
+
+  unset ZSKK_BOUND_WIDGETS
+  unset ZSKK_STATE
+  unset ZSKK_CACHE
+  unset ZSKK_CONFIG
+  unset _ZSKK_INITIALIZED
+}
