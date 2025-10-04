@@ -9,8 +9,13 @@ function zskk-init {
   fi
   typeset -g _ZSKK_INITIALIZED=1
 
+  autoload -Uz zskk-dict
+
   zskk::load-config "$@"
   zskk::prepare-state
+  if ! zskk::dict-init; then
+    print -u2 -- "zskk: warning: dictionary initialization failed"
+  fi
   zskk::install-widgets
 }
 
@@ -20,13 +25,25 @@ function zskk::load-config {
 
   typeset -gA ZSKK_CONFIG
 
-  local value
-  if zstyle -s ':zskk:dict' path value; then
+  local value sample_dict
+  sample_dict=${ZSKK_PLUGIN_ROOT:-${${(%):-%N}:A:h}}/jisyo/SKK-JISYO.sample
+
+  if zstyle -s ':zskk:dict' system value; then
+    ZSKK_CONFIG[dict_path]="${value}"
+  elif zstyle -s ':zskk:dict' path value; then
     ZSKK_CONFIG[dict_path]="${value}"
   elif [[ -n ${ZSKK_DICT_PATH:-} ]]; then
     ZSKK_CONFIG[dict_path]="${ZSKK_DICT_PATH}"
   else
-    ZSKK_CONFIG[dict_path]="${HOME}/.zskk-jisyo"
+    ZSKK_CONFIG[dict_path]="${sample_dict}"
+  fi
+
+  if zstyle -s ':zskk:dict' personal value; then
+    ZSKK_CONFIG[personal_dict]="${value}"
+  elif [[ -n ${ZSKK_PERSONAL_DICT:-} ]]; then
+    ZSKK_CONFIG[personal_dict]="${ZSKK_PERSONAL_DICT}"
+  else
+    ZSKK_CONFIG[personal_dict]="${HOME}/.zskk-jisyo"
   fi
 
   if zstyle -s ':zskk:init' mode value; then
