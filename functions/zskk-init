@@ -9,18 +9,15 @@ function zskk-init {
   fi
   typeset -g _ZSKK_INITIALIZED=1
 
-  if [[ -z ${_ZSKK_DICT_MODULE_SOURCED:-} ]]; then
-    if [[ -r ${ZSKK_PLUGIN_ROOT}/functions/zskk-dict ]]; then
-      source ${ZSKK_PLUGIN_ROOT}/functions/zskk-dict
-    fi
-    typeset -g _ZSKK_DICT_MODULE_SOURCED=1
+  local plugin_root=${ZSKK_PLUGIN_ROOT:-${${(%):-%x}:A:h:h}}
+  typeset -g ZSKK_PLUGIN_ROOT=${plugin_root}
+
+  if [[ -r ${plugin_root}/functions/zskk-dict ]]; then
+    source ${plugin_root}/functions/zskk-dict
   fi
 
-  if [[ -z ${_ZSKK_INPUT_MODULE_SOURCED:-} ]]; then
-    if [[ -r ${ZSKK_PLUGIN_ROOT}/functions/zskk-input ]]; then
-      source ${ZSKK_PLUGIN_ROOT}/functions/zskk-input
-    fi
-    typeset -g _ZSKK_INPUT_MODULE_SOURCED=1
+  if [[ -r ${plugin_root}/functions/zskk-input ]]; then
+    source ${plugin_root}/functions/zskk-input
   fi
 
   zskk::load-config "$@"

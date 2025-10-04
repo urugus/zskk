@@ -107,13 +107,16 @@ function zskk::dict-parse-line {
   while [[ ${fragment} == /* ]]; do
     fragment=${fragment#/}
     candidate=${fragment%%/*}
+    if [[ -z ${candidate} ]]; then
+      break
+    fi
     candlist+=("${candidate}")
     fragment=${fragment#${candidate}}
   done
 
   (( ${#candlist} )) || return 1
 
-  local joined=${(j:\n:)candlist}
+  local joined=${(j:$'\n':)candlist}
   local current=${ZSKK_DICT[${key}]:-}
   if [[ -n ${current} ]]; then
     ZSKK_DICT[${key}]="${current}"$'\n'"${joined}"
@@ -137,7 +140,7 @@ function zskk::dict-get {
   fi
 
   typeset -ga reply
-  reply=(${(f)ZSKK_DICT[${key}]})
+  reply=(${(@s:$'\n':)ZSKK_DICT[${key}]})
   REPLY=${ZSKK_DICT[${key}]}
   return 0
 }
