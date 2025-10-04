@@ -72,6 +72,37 @@ assert_eq "${ZSKK_STATE[last_commit]}" "二本" "last commit after commit"
 assert_eq "${ZSKK_WIDGET_LAST_MESSAGE}" "" "status cleared after commit"
 assert_eq "${LBUFFER}" "二本" "buffer after commit"
 
+# --- Okuri handling ---
+reset_state
+for ch in k a; do
+  zskk::widgets-handle-insert "${ch}"
+done
+zskk::widgets-handle-insert K
+zskk::widgets-handle-insert u
+assert_eq "${ZSKK_STATE[preedit]}" "か" "okuri stem stored in preedit"
+assert_eq "${ZSKK_STATE[okuri]}" "く" "okuri buffer stores kana"
+assert_eq "${LBUFFER}" "かく" "buffer shows stem + okuri"
+
+zskk::widgets-start-conversion
+assert_eq "${LBUFFER}" "書く" "okuri conversion buffer"
+assert_eq "${ZSKK_STATE[current_candidate]}" "書く" "current candidate with okuri"
+assert_eq "${ZSKK_STATE[candidate_count]}" "1" "single candidate for okuri"
+
+zskk::widgets-commit
+assert_eq "${ZSKK_STATE[last_commit]}" "書く" "okuri commit recorded"
+assert_eq "${ZSKK_STATE[okuri]}" "" "okuri cleared after commit"
+assert_eq "${ZSKK_STATE[okuri_mode]}" "0" "okuri mode reset after commit"
+
+reset_state
+for ch in k a K u; do
+  zskk::widgets-handle-insert "${ch}"
+done
+zskk::widgets-handle-backspace
+assert_eq "${ZSKK_STATE[okuri]}" "" "okuri cleared after backspace"
+assert_eq "${ZSKK_STATE[preedit]}" "か" "stem preserved after okuri backspace"
+assert_eq "${LBUFFER}" "か" "buffer reflects removed okuri"
+
+# --- Conversion cancel restores reading ---
 # --- Conversion cancel restores reading ---
 reset_state
 for ch in n i h o n; do

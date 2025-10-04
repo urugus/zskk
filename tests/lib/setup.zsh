@@ -42,6 +42,7 @@ function zskk::test-reset-state {
     candidate_index -1
     current_candidate ""
     last_commit ""
+    okuri_mode 0
   )
 
   typeset -gA ZSKK_CACHE

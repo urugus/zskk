@@ -69,7 +69,7 @@ assert_eq "${ZSKK_STATE[candidate_count]}" "0" "candidate count zero on fallback
 zskk::conversion-cancel
 assert_eq "${REPLY}" "ほげ" "conversion cancel returns original reading"
 assert_eq "${ZSKK_STATE[current_candidate]}" "" "current candidate cleared after cancel"
-assert_eq "${ZSKK_STATE[preedit]}" "" "preedit cleared after cancel"
+assert_eq "${ZSKK_STATE[preedit]}" "ほげ" "preedit restored after cancel"
 assert_eq "${ZSKK_STATE[lookup_key]}" "" "lookup key cleared after cancel"
 
 print -- "All ${ASSERT_COUNT} assertions passed."

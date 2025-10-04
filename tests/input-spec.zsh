@@ -67,6 +67,11 @@ fi
 typeset joined_candidates="${(j:, :)reply}"
 assert_eq "${joined_candidates}" "愛, 相" "dictionary candidates match sample"
 
-assert_eq "${ZSKK_DICT_STATS[entries]}" "4" "dictionary entry count from sample"
+if ! zskk::dict-get か; then
+  fail "dictionary lookup for か"
+fi
+assert_eq "${reply[1]}" "書" "dictionary okuri stem candidate"
+
+assert_eq "${ZSKK_DICT_STATS[entries]}" "5" "dictionary entry count from sample"
 
 print -- "All ${ASSERT_COUNT} assertions passed."

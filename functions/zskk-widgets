@@ -100,6 +100,61 @@ function zskk::widgets-binding-keys {
   return 0
 }
 
+function zskk::widgets-trim-preedit {
+  emulate -L zsh
+
+  local suffix=$1
+  local current=${ZSKK_STATE[preedit]:-}
+  [[ -z ${suffix} || -z ${current} ]] && return 0
+
+  local -a chars=(${(s::)current})
+  local -a remove=(${(s::)suffix})
+  local total=${#chars}
+  local cut=${#remove}
+  if (( cut >= total )); then
+    ZSKK_STATE[preedit]=""
+  else
+    local end=$(( total - cut ))
+    ZSKK_STATE[preedit]=${(j::)chars[1,end]}
+  fi
+}
+
+function zskk::widgets-append-okuri {
+  emulate -L zsh
+
+  local text=$1
+  [[ -z ${text} ]] && return 0
+
+  local okuri=${ZSKK_STATE[okuri]:-}
+  okuri+=${text}
+  ZSKK_STATE[okuri]=${okuri}
+  ZSKK_STATE[okuri_mode]=1
+}
+
+function zskk::widgets-pop-okuri {
+  emulate -L zsh
+
+  local okuri=${ZSKK_STATE[okuri]:-}
+  [[ -z ${okuri} ]] && { REPLY=""; return 1; }
+
+  local -a chars=(${(s::)okuri})
+  local removed=${chars[-1]}
+  local length=${#chars}
+  if (( length <= 1 )); then
+    ZSKK_STATE[okuri]=""
+  else
+    local end=$(( length - 1 ))
+    ZSKK_STATE[okuri]=${(j::)chars[1,end]}
+  fi
+
+  if [[ -z ${ZSKK_STATE[okuri]:-} ]]; then
+    ZSKK_STATE[okuri_mode]=0
+  fi
+
+  REPLY=${removed}
+  return 0
+}
+
 # Determine whether conversion candidate selection is active.
 function zskk::widgets-conversion-active {
   emulate -L zsh
@@ -114,18 +169,20 @@ function zskk::widgets-build-status {
   local mode=${ZSKK_STATE[mode]:-direct}
   local pre=${ZSKK_STATE[preedit]:-}
   local composing=${ZSKK_STATE[composing]:-}
+  local okuri=${ZSKK_STATE[okuri]:-}
 
   if (( ${ZSKK_STATE[candidate_count]:-0} > 0 )); then
     REPLY="${mode}:候補(${ZSKK_STATE[current_candidate]:-})"
     return 0
   fi
 
-  if [[ -z ${pre} && -z ${composing} ]]; then
+  local display="${pre}${composing}${okuri}"
+  if [[ -z ${display} ]]; then
     REPLY=""
     return 1
   fi
 
-  REPLY="${mode}:${pre}${composing}"
+  REPLY="${mode}:${display}"
   return 0
 }
 
@@ -179,6 +236,10 @@ function zskk::widgets-flush-composing {
   zskk::input-flush "${ZSKK_STATE[mode]:-hiragana}"
   local produced=${REPLY}
   if [[ -n ${produced} ]]; then
+    if (( ${ZSKK_STATE[okuri_mode]:-0} )); then
+      zskk::widgets-trim-preedit "${produced}"
+      zskk::widgets-append-okuri "${produced}"
+    fi
     LBUFFER+="${produced}"
   fi
   return 0
@@ -195,15 +256,21 @@ function zskk::widgets-start-conversion {
   zskk::widgets-flush-composing
 
   local reading=${ZSKK_STATE[preedit]:-}
+  local okuri=${ZSKK_STATE[okuri]:-}
   if [[ -z ${reading} ]]; then
     return 1
   fi
 
+  if [[ -n ${okuri} ]]; then
+    zskk::widgets-remove-suffix "${okuri}"
+  fi
   zskk::widgets-remove-suffix "${reading}"
-  if ! zskk::conversion-begin; then
-    # Even fallback string should be inserted back.
+
+  if ! zskk::conversion-begin "${reading}" "${okuri}"; then
     local fallback=${REPLY}
     LBUFFER+="${fallback}"
+    ZSKK_STATE[okuri]=${okuri}
+    ZSKK_STATE[okuri_mode]=$(( ${#okuri} > 0 ))
     zskk::widgets-update-status
     return 0
   fi
@@ -272,10 +339,9 @@ function zskk::widgets-cancel {
   local current=${ZSKK_STATE[current_candidate]:-}
   zskk::widgets-remove-suffix "${current}"
   zskk::conversion-cancel
-  local reading=${REPLY}
-  if [[ -n ${reading} ]]; then
-    LBUFFER+="${reading}"
-    ZSKK_STATE[preedit]="${reading}"
+  local restored=${REPLY}
+  if [[ -n ${restored} ]]; then
+    LBUFFER+="${restored}"
   fi
   zskk::widgets-update-status
   return 0
@@ -294,7 +360,7 @@ function zskk::widgets-handle-insert {
   fi
 
   if (( ${ZSKK_STATE[candidate_count]:-0} > 0 )); then
-    zskk::conversion-commit
+    zskk::widgets-commit
   fi
 
   if [[ ${mode} == direct ]]; then
@@ -302,11 +368,36 @@ function zskk::widgets-handle-insert {
     return 1
   fi
 
-  zskk::input-feed "${mode}" "${char}"
+  local is_alpha=0
+  [[ ${char} == [a-zA-Z] ]] && is_alpha=1
+
+  local okuri_char=0
+  local feed_char=${char}
+
+  if [[ ${char} == [A-Z] ]]; then
+    feed_char=${char:l}
+    ZSKK_STATE[okuri_mode]=1
+    okuri_char=1
+  elif (( ${ZSKK_STATE[okuri_mode]:-0} )) && [[ ${char} == [a-z] ]]; then
+    okuri_char=1
+  elif ! (( is_alpha )); then
+    if (( ${ZSKK_STATE[okuri_mode]:-0} )); then
+      ZSKK_STATE[okuri_mode]=0
+    fi
+  fi
+
+  zskk::input-feed "${mode}" "${feed_char:l}"
   local committed=${REPLY}
+
+  if (( okuri_char )) && [[ -n ${committed} ]]; then
+    zskk::widgets-trim-preedit "${committed}"
+    zskk::widgets-append-okuri "${committed}"
+  fi
+
   if [[ -n ${committed} ]]; then
     LBUFFER+="${committed}"
   fi
+
   zskk::widgets-update-status
   REPLY=${committed}
   return 0
@@ -328,10 +419,27 @@ function zskk::widgets-handle-backspace {
     return 0
   fi
 
+  local okuri=${ZSKK_STATE[okuri]:-}
+  if [[ -n ${okuri} ]]; then
+    if zskk::widgets-pop-okuri; then
+      zskk::widgets-remove-suffix "${REPLY}"
+    fi
+    zskk::widgets-update-status
+    return 0
+  fi
+
   local pre=${ZSKK_STATE[preedit]:-}
   if [[ -n ${pre} ]]; then
-    zskk::widgets-remove-suffix "${pre[-1]}"
-    ZSKK_STATE[preedit]=${pre[1,${#pre}-1]}
+    local -a chars=(${(s::)pre})
+    local removed=${chars[-1]}
+    zskk::widgets-remove-suffix "${removed}"
+    local plen=${#chars}
+    if (( plen <= 1 )); then
+      ZSKK_STATE[preedit]=""
+    else
+      local end=$(( plen - 1 ))
+      ZSKK_STATE[preedit]=${(j::)chars[1,end]}
+    fi
     zskk::widgets-update-status
     return 0
   fi

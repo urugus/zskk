@@ -358,6 +358,7 @@ function zskk::conversion-begin {
 
   ZSKK_STATE[preedit]="${REPLY}"
   ZSKK_STATE[current_candidate]="${REPLY}"
+  ZSKK_STATE[okuri_mode]=0
   return ${rc}
 }
 
@@ -454,9 +455,15 @@ function zskk::conversion-cancel {
   emulate -L zsh
 
   local reading=${ZSKK_STATE[lookup_key]:-}
+  local okuri=${ZSKK_STATE[okuri]:-}
   zskk::conversion-reset
   zskk::input-reset
-  REPLY="${reading}"
+  if typeset -p ZSKK_STATE &>/dev/null; then
+    ZSKK_STATE[preedit]="${reading}"
+    ZSKK_STATE[okuri]="${okuri}"
+    ZSKK_STATE[okuri_mode]=$(( ${#okuri} > 0 ))
+  fi
+  REPLY="${reading}${okuri}"
 }
 
 # zskk::conversion-reset -- clear engine-driven candidate state.
@@ -467,6 +474,8 @@ function zskk::conversion-reset {
   if typeset -p ZSKK_STATE &>/dev/null; then
     ZSKK_STATE[current_candidate]=""
     ZSKK_STATE[preedit]=""
+    ZSKK_STATE[okuri]=""
+    ZSKK_STATE[okuri_mode]=0
   fi
 }
 
