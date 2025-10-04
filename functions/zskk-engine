@@ -1,0 +1,212 @@
+#autoload
+
+# zskk::engine-init -- prepare conversion engine state containers.
+function zskk::engine-init {
+  emulate -L zsh -o extended_glob
+
+  if [[ -n ${_ZSKK_ENGINE_READY:-} ]]; then
+    return 0
+  fi
+
+  zskk::engine-reset
+  typeset -g _ZSKK_ENGINE_READY=1
+}
+
+# Reset conversion-specific fields while keeping global mode settings.
+function zskk::engine-reset {
+  emulate -L zsh
+
+  if ! typeset -p ZSKK_STATE &>/dev/null; then
+    return 0
+  fi
+
+  ZSKK_STATE[lookup_key]=""
+  ZSKK_STATE[okuri]=""
+  ZSKK_STATE[candidates]=""
+  ZSKK_STATE[candidate_count]=0
+  ZSKK_STATE[candidate_index]=-1
+}
+
+# Internal helper to store candidate list and bookkeeping.
+function zskk::engine--set-candidates {
+  emulate -L zsh
+
+  local -a list
+  list=("$@")
+
+  if (( ${#list} )); then
+    ZSKK_STATE[candidates]="${(F)list}"
+    ZSKK_STATE[candidate_count]=${#list}
+    ZSKK_STATE[candidate_index]=0
+  else
+    ZSKK_STATE[candidates]=""
+    ZSKK_STATE[candidate_count]=0
+    ZSKK_STATE[candidate_index]=-1
+  fi
+}
+
+# Return fallback string when no candidates were found.
+function zskk::engine--fallback {
+  emulate -L zsh
+
+  local reading=${ZSKK_STATE[lookup_key]:-}
+  local okuri=${ZSKK_STATE[okuri]:-}
+  REPLY="${reading}${okuri}"
+}
+
+# Begin conversion for the given reading (in kana) and optional okuri.
+# On success, REPLY holds the first candidate; on failure a fallback is returned.
+function zskk::engine-begin {
+  emulate -L zsh -o extended_glob
+
+  local reading=$1
+  local okuri=${2:-}
+
+  if ! typeset -p ZSKK_STATE &>/dev/null; then
+    return 1
+  fi
+
+  ZSKK_STATE[lookup_key]="${reading}"
+  ZSKK_STATE[okuri]="${okuri}"
+  zskk::engine--set-candidates
+
+  if [[ -z ${reading} ]]; then
+    zskk::engine--fallback
+    return 1
+  fi
+
+  if zskk::dict-get "${reading}"; then
+    if (( ${#reply} )); then
+      zskk::engine--set-candidates "${reply[@]}"
+      zskk::engine-current
+      return 0
+    fi
+  fi
+
+  zskk::engine--fallback
+  return 1
+}
+
+# Compose display/commit text for the current index.
+function zskk::engine-current {
+  emulate -L zsh
+
+  local count=${ZSKK_STATE[candidate_count]:-0}
+  if (( count <= 0 )); then
+    zskk::engine--fallback
+    return 1
+  fi
+
+  local index=${ZSKK_STATE[candidate_index]:-0}
+  (( index < 0 )) && index=0
+  local -a list=(${(f)${ZSKK_STATE[candidates]:-}})
+  if (( index + 1 > ${#list} )); then
+    index=0
+    ZSKK_STATE[candidate_index]=0
+  fi
+
+  local candidate=${list[index+1]}
+  zskk::engine--apply-okuri "${candidate}" "${ZSKK_STATE[okuri]:-}"
+  return 0
+}
+
+# Append okuri portion to candidate for output.
+function zskk::engine--apply-okuri {
+  emulate -L zsh
+
+  local candidate=$1
+  local okuri=${2:-}
+  if [[ -z ${candidate} ]]; then
+    REPLY="${okuri}"
+    return 0
+  fi
+  if [[ -n ${okuri} ]]; then
+    REPLY="${candidate}${okuri}"
+  else
+    REPLY="${candidate}"
+  fi
+}
+
+# Cycle to the next candidate. Returns 0 on success, 1 if no candidates.
+function zskk::engine-next {
+  emulate -L zsh
+
+  local count=${ZSKK_STATE[candidate_count]:-0}
+  if (( count <= 0 )); then
+    zskk::engine--fallback
+    return 1
+  fi
+
+  local index=${ZSKK_STATE[candidate_index]:-0}
+  index=$(( (index + 1) % count ))
+  ZSKK_STATE[candidate_index]=${index}
+  zskk::engine-current
+}
+
+# Cycle to the previous candidate.
+function zskk::engine-prev {
+  emulate -L zsh
+
+  local count=${ZSKK_STATE[candidate_count]:-0}
+  if (( count <= 0 )); then
+    zskk::engine--fallback
+    return 1
+  fi
+
+  local index=${ZSKK_STATE[candidate_index]:-0}
+  index=$(( (index - 1 + count) % count ))
+  ZSKK_STATE[candidate_index]=${index}
+  zskk::engine-current
+}
+
+# Select candidate by zero-based index.
+function zskk::engine-select {
+  emulate -L zsh
+
+  local index=$1
+  local count=${ZSKK_STATE[candidate_count]:-0}
+  if (( count <= 0 )); then
+    zskk::engine--fallback
+    return 1
+  fi
+
+  if (( index < 0 || index >= count )); then
+    return 1
+  fi
+
+  ZSKK_STATE[candidate_index]=${index}
+  zskk::engine-current
+}
+
+# Export current candidate list (including okuri) to reply array.
+function zskk::engine-list {
+  emulate -L zsh
+
+  local -a base=(${(f)${ZSKK_STATE[candidates]:-}})
+  typeset -ga reply
+  reply=()
+
+  if (( ${#base} == 0 )); then
+    reply=("${ZSKK_STATE[lookup_key]:-}${ZSKK_STATE[okuri]:-}")
+    REPLY=${reply[1]}
+    return 1
+  fi
+
+  local candidate
+  for candidate in "${base[@]}"; do
+    zskk::engine--apply-okuri "${candidate}" "${ZSKK_STATE[okuri]:-}"
+    reply+=("${REPLY}")
+  done
+
+  REPLY=${(F)reply}
+  return 0
+}
+
+# Determine whether the engine holds any candidates.
+function zskk::engine-has-candidates {
+  emulate -L zsh
+
+  (( ${ZSKK_STATE[candidate_count]:-0} > 0 )) && return 0
+  return 1
+}
+

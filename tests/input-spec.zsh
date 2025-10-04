@@ -3,55 +3,14 @@ set -uo pipefail
 setopt pipefail
 
 BASE_DIR=${0:A:h}/..
-cd "${BASE_DIR}"
-
-source ./functions/zskk-dict
-source ./functions/zskk-input
-
-typeset -g ZSKK_PLUGIN_ROOT=${BASE_DIR}
-
-typeset -gA ZSKK_CONFIG
-ZSKK_CONFIG=(
-  dict_path "${BASE_DIR}/jisyo/SKK-JISYO.sample"
-  personal_dict "${BASE_DIR}/tests/tmp-personal-jisyo"
-  initial_mode "hiragana"
-  keymap "main"
-)
-
-typeset -gA ZSKK_STATE
-ZSKK_STATE=(
-  mode "hiragana"
-  composing ""
-  preedit ""
-  okuri ""
-  candidates ""
-)
-
-typeset -gA ZSKK_CACHE
-ZSKK_CACHE=()
+source "${BASE_DIR}/tests/lib/setup.zsh"
+source "${BASE_DIR}/tests/lib/assert.zsh"
 
 zskk::input-init
 if ! zskk::dict-init; then
   print -u2 -- 'FAIL: dict-init failed'
   exit 1
 fi
-
-integer ASSERT_COUNT=0
-
-function fail {
-  print -u2 -- "FAIL: $*"
-  exit 1
-}
-
-function assert_eq {
-  local actual="$1"
-  local expect="$2"
-  local message="$3"
-  (( ASSERT_COUNT++ ))
-  if [[ "${actual}" != "${expect}" ]]; then
-    fail "${message}: expected '${expect}' but got '${actual}'"
-  fi
-}
 
 # --- Basic hiragana conversion ---
 zskk::input-reset

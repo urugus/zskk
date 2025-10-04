@@ -12,13 +12,18 @@ function zskk-init {
   local plugin_root=${ZSKK_PLUGIN_ROOT:-${${(%):-%x}:A:h:h}}
   typeset -g ZSKK_PLUGIN_ROOT=${plugin_root}
 
-  if [[ -r ${plugin_root}/functions/zskk-dict ]]; then
-    source ${plugin_root}/functions/zskk-dict
-  fi
-
-  if [[ -r ${plugin_root}/functions/zskk-input ]]; then
-    source ${plugin_root}/functions/zskk-input
-  fi
+  local module
+  local -a modules=(
+    zskk-dict
+    zskk-input
+    zskk-engine
+  )
+  for module in ${modules}; do
+    local path=${plugin_root}/functions/${module}
+    if [[ -r ${path} ]]; then
+      source ${path}
+    fi
+  done
 
   zskk::load-config "$@"
   zskk::prepare-state
@@ -26,6 +31,7 @@ function zskk-init {
     print -u2 -- "zskk: warning: dictionary initialization failed"
   fi
   zskk::input-init
+  zskk::engine-init
   zskk::install-widgets
 }
 
@@ -80,6 +86,9 @@ function zskk::prepare-state {
     preedit ""
     okuri ""
     candidates ""
+    lookup_key ""
+    candidate_count 0
+    candidate_index -1
   )
 
   typeset -gA ZSKK_CACHE
