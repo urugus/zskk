@@ -10,6 +10,25 @@ function zskk::widgets-init {
   typeset -gA ZSKK_WIDGET_METADATA
   typeset -g ZSKK_WIDGET_LAST_MESSAGE=""
 
+  if ! typeset -p ZSKK_BINDINGS &>/dev/null || (( ${#ZSKK_BINDINGS[@]:-0} == 0 )); then
+    if (( ${+functions[zskk::config-load-bindings]} )); then
+      zskk::config-load-bindings
+    else
+      typeset -gA ZSKK_BINDINGS
+      ZSKK_BINDINGS=(
+        convert-next $' '
+        convert-prev '^K'
+        convert-commit '^J'
+        convert-cancel '^G'
+        toggle-mode '^]'
+      )
+      local action
+      for action in ${(k)ZSKK_BINDINGS}; do
+        ZSKK_BINDINGS[${action}]=${ZSKK_BINDINGS[${action}]}
+      done
+    fi
+  fi
+
   ZSKK_WIDGET_ORIGINAL=()
   ZSKK_WIDGET_METADATA=()
 }
@@ -50,6 +69,8 @@ function zskk::widgets-bindkey {
   local keymap=$1
   local key=$2
   local widget=$3
+  [[ -z ${key} ]] && return 1
+
   local original='__zskk-unbound__'
 
   local current
@@ -59,6 +80,24 @@ function zskk::widgets-bindkey {
 
   bindkey -M "${keymap}" "${key}" "${widget}"
   ZSKK_BOUND_WIDGETS+=("binding:${keymap}:${key}:${original}")
+}
+
+function zskk::widgets-binding-keys {
+  emulate -L zsh
+
+  local action=$1
+  typeset -ga reply
+  reply=()
+
+  if ! typeset -p ZSKK_BINDINGS &>/dev/null; then
+    return 1
+  fi
+
+  local value=${ZSKK_BINDINGS[${action}]:-}
+  [[ -z ${value} ]] && return 1
+
+  reply=(${(ps:\n:)value})
+  return 0
 }
 
 # Determine whether conversion candidate selection is active.

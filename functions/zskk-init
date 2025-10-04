@@ -75,6 +75,51 @@ function zskk::load-config {
   else
     ZSKK_CONFIG[keymap]="${${(M)KEYMAP:#(viins|main|emacs)}:-main}"
   fi
+
+  zskk::config-load-bindings
+}
+
+# Load keybinding configuration (supports zstyle and env overrides).
+function zskk::config-load-bindings {
+  emulate -L zsh
+
+  typeset -gA ZSKK_BINDINGS
+
+  local -A defaults=(
+    convert-next $' '
+    convert-prev '^K'
+    convert-commit '^J'
+    convert-cancel '^G'
+    toggle-mode '^]'
+  )
+
+  ZSKK_BINDINGS=()
+
+  local action default
+  for action default in ${(kv)defaults}; do
+    local -a keys
+    keys=()
+
+    if zstyle -a ':zskk:bindkey' ${action} keys; then
+      :
+    else
+      local env_key=${action//-/_}
+      env_key=${env_key:u}
+      local env_name=ZSKK_BINDKEY_${env_key}
+      local env_value=${(P)env_name:-}
+      if [[ -n ${env_value} ]]; then
+        keys=(${(ps:\n:)env_value})
+        (( ${#keys} == 0 )) && keys=(${env_value})
+      fi
+    fi
+
+    if (( ${#keys} == 0 )); then
+      keys=(${default})
+    fi
+
+    local joined=${(j:\n:)keys}
+    ZSKK_BINDINGS[${action}]=${joined}
+  done
 }
 
 # Prepare top-level state containers. Detailed implementation comes later.
@@ -140,8 +185,21 @@ function zskk::install-widgets {
 
   zskk::widgets-update-status
 
-  zskk::widgets-bindkey "${keymap}" ' ' zskk-convert-next
-  zskk::widgets-bindkey "${keymap}" '^J' zskk-convert-commit
-  zskk::widgets-bindkey "${keymap}" '^G' zskk-convert-cancel
-  zskk::widgets-bindkey "${keymap}" '^]' zskk-toggle-mode
+  local -A binding_targets=(
+    convert-next zskk-convert-next
+    convert-prev zskk-convert-prev
+    convert-commit zskk-convert-commit
+    convert-cancel zskk-convert-cancel
+    toggle-mode zskk-toggle-mode
+  )
+
+  local action widget
+  for action widget in ${(kv)binding_targets}; do
+    if zskk::widgets-binding-keys ${action}; then
+      local key
+      for key in ${reply[@]}; do
+        zskk::widgets-bindkey "${keymap}" "${key}" "${widget}"
+      done
+    fi
+  done
 }

@@ -9,6 +9,7 @@ cd "${BASE_DIR}"
 source ./functions/zskk-dict
 source ./functions/zskk-input
 source ./functions/zskk-engine
+source ./functions/zskk-init
 
 typeset -g ZSKK_PLUGIN_ROOT=${BASE_DIR}
 
@@ -22,6 +23,8 @@ function zskk::test-reset-config {
     initial_mode "hiragana"
     keymap "main"
   )
+
+  zskk::config-load-bindings
 }
 
 function zskk::test-reset-state {
