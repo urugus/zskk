@@ -9,12 +9,37 @@ function zskk-unload {
   fi
 
   if (( ${#ZSKK_BOUND_WIDGETS[@]} )); then
-    local entry alias
+    local entry kind raw keymap key original widget alias
     for entry in ${ZSKK_BOUND_WIDGETS[@]}; do
-      alias=${entry##*:}
-      if [[ -n ${alias:-} ]] && zle -l | grep -Fxq -- "${alias}"; then
-        zle -D "${alias}"
-      fi
+      kind=${entry%%:*}
+      raw=${entry#*:}
+      case ${kind} in
+        override)
+          widget=${raw%%:*}
+          alias=${raw##*:}
+          if zle -l | grep -Fxq -- "${alias}"; then
+            zle -A "${alias}" "${widget}"
+            zle -D "${alias}"
+          fi
+          ;;
+        custom)
+          alias=${raw}
+          if zle -l | grep -Fxq -- "${alias}"; then
+            zle -D "${alias}"
+          fi
+          ;;
+        binding)
+          keymap=${raw%%:*}
+          raw=${raw#*:}
+          key=${raw%%:*}
+          original=${raw##*:}
+          if [[ ${original} == __zskk-unbound__ ]]; then
+            bindkey -M "${keymap}" -r "${key}"
+          else
+            bindkey -M "${keymap}" "${key}" "${original}"
+          fi
+          ;;
+      esac
     done
   fi
 
@@ -23,6 +48,7 @@ function zskk-unload {
   unset ZSKK_CACHE
   unset ZSKK_CONFIG
   unset ZSKK_ROMA_TABLE ZSKK_ROMA_PREFIX ZSKK_KATA_MAP
+  unset ZSKK_WIDGET_ORIGINAL ZSKK_WIDGET_METADATA ZSKK_WIDGET_LAST_MESSAGE
   unset _ZSKK_ROMA_READY _ZSKK_ROMA_MAX_KEY_LENGTH REPLY2
   unset _ZSKK_INITIALIZED
 }

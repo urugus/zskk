@@ -1,0 +1,420 @@
+#autoload
+
+# Widget management and ZLE integration helpers for zskk.
+
+# Initialize widget bookkeeping structures.
+function zskk::widgets-init {
+  emulate -L zsh
+
+  typeset -gA ZSKK_WIDGET_ORIGINAL
+  typeset -gA ZSKK_WIDGET_METADATA
+  typeset -g ZSKK_WIDGET_LAST_MESSAGE=""
+
+  ZSKK_WIDGET_ORIGINAL=()
+  ZSKK_WIDGET_METADATA=()
+}
+
+# Remember the original widget name before overriding it.
+function zskk::widgets-register-original {
+  emulate -L zsh
+
+  local logical=$1
+  local original=$2
+  [[ -z ${logical} || -z ${original} ]] && return 1
+  ZSKK_WIDGET_ORIGINAL[${logical}]=${original}
+}
+
+# Call the original widget implementation if available.
+function zskk::widgets-call-original {
+  emulate -L zsh
+
+  local logical=$1
+  shift
+  local original=${ZSKK_WIDGET_ORIGINAL[${logical}]:-}
+  [[ -z ${original} ]] && return 1
+
+  if [[ -z ${ZLE_LINE_EDITOR:-} ]]; then
+    return 1
+  fi
+
+  if zle -la | grep -Fxq -- "${original}"; then
+    zle ${original} -- "$@"
+    return $?
+  fi
+  return 1
+}
+
+function zskk::widgets-bindkey {
+  emulate -L zsh
+
+  local keymap=$1
+  local key=$2
+  local widget=$3
+  local original='__zskk-unbound__'
+
+  local current
+  if current=$(bindkey -M "${keymap}" "${key}" 2>/dev/null); then
+    original=${current##* }
+  fi
+
+  bindkey -M "${keymap}" "${key}" "${widget}"
+  ZSKK_BOUND_WIDGETS+=("binding:${keymap}:${key}:${original}")
+}
+
+# Determine whether conversion candidate selection is active.
+function zskk::widgets-conversion-active {
+  emulate -L zsh
+  (( ${ZSKK_STATE[candidate_count]:-0} > 0 )) && return 0
+  return 1
+}
+
+# Helper: build status message for current pre-edit state.
+function zskk::widgets-build-status {
+  emulate -L zsh
+
+  local mode=${ZSKK_STATE[mode]:-direct}
+  local pre=${ZSKK_STATE[preedit]:-}
+  local composing=${ZSKK_STATE[composing]:-}
+
+  if (( ${ZSKK_STATE[candidate_count]:-0} > 0 )); then
+    REPLY="${mode}:候補(${ZSKK_STATE[current_candidate]:-})"
+    return 0
+  fi
+
+  if [[ -z ${pre} && -z ${composing} ]]; then
+    REPLY=""
+    return 1
+  fi
+
+  REPLY="${mode}:${pre}${composing}"
+  return 0
+}
+
+# Update status message both for UI and test inspection.
+function zskk::widgets-update-status {
+  emulate -L zsh
+
+  local message=""
+  if zskk::widgets-build-status; then
+    message=${REPLY}
+  fi
+
+  ZSKK_WIDGET_LAST_MESSAGE=${message}
+
+  if [[ -n ${ZLE_LINE_EDITOR:-} ]]; then
+    if [[ -n ${message} ]]; then
+      zle -M -- "${message}"
+    else
+      zle -M -- ""
+    fi
+  fi
+}
+
+# Remove suffix text from LBUFFER if present.
+function zskk::widgets-remove-suffix {
+  emulate -L zsh
+
+  local text=$1
+  local len=${#text}
+  (( len == 0 )) && return 0
+
+  local buf=${LBUFFER:-}
+  local total=${#buf}
+  if (( len >= total )); then
+    LBUFFER=""
+  else
+    LBUFFER=${buf[1,${total}-len]}
+  fi
+}
+
+# Flush composing buffer into LBUFFER (used prior to conversion).
+function zskk::widgets-flush-composing {
+  emulate -L zsh
+
+  local composing=${ZSKK_STATE[composing]:-}
+  if [[ -z ${composing} ]]; then
+    REPLY=""
+    return 1
+  fi
+
+  zskk::input-flush "${ZSKK_STATE[mode]:-hiragana}"
+  local produced=${REPLY}
+  if [[ -n ${produced} ]]; then
+    LBUFFER+="${produced}"
+  fi
+  return 0
+}
+
+# Start conversion for the current pre-edit string.
+function zskk::widgets-start-conversion {
+  emulate -L zsh
+
+  if zskk::widgets-conversion-active; then
+    return 1
+  fi
+
+  zskk::widgets-flush-composing
+
+  local reading=${ZSKK_STATE[preedit]:-}
+  if [[ -z ${reading} ]]; then
+    return 1
+  fi
+
+  zskk::widgets-remove-suffix "${reading}"
+  if ! zskk::conversion-begin; then
+    # Even fallback string should be inserted back.
+    local fallback=${REPLY}
+    LBUFFER+="${fallback}"
+    zskk::widgets-update-status
+    return 0
+  fi
+
+  local candidate=${REPLY}
+  LBUFFER+="${candidate}"
+  zskk::widgets-update-status
+  return 0
+}
+
+# Advance to next candidate.
+function zskk::widgets-cycle-next {
+  emulate -L zsh
+
+  if ! zskk::widgets-conversion-active; then
+    return 1
+  fi
+
+  local current=${ZSKK_STATE[current_candidate]:-}
+  zskk::widgets-remove-suffix "${current}"
+  zskk::conversion-next
+  local candidate=${REPLY}
+  LBUFFER+="${candidate}"
+  zskk::widgets-update-status
+  return 0
+}
+
+# Step back to previous candidate.
+function zskk::widgets-cycle-prev {
+  emulate -L zsh
+
+  if ! zskk::widgets-conversion-active; then
+    return 1
+  fi
+
+  local current=${ZSKK_STATE[current_candidate]:-}
+  zskk::widgets-remove-suffix "${current}"
+  zskk::conversion-prev
+  local candidate=${REPLY}
+  LBUFFER+="${candidate}"
+  zskk::widgets-update-status
+  return 0
+}
+
+# Commit current candidate and reset conversion state.
+function zskk::widgets-commit {
+  emulate -L zsh
+
+  if ! zskk::widgets-conversion-active; then
+    return 1
+  fi
+
+  zskk::conversion-commit
+  zskk::widgets-update-status
+  return 0
+}
+
+# Cancel conversion and restore original reading.
+function zskk::widgets-cancel {
+  emulate -L zsh
+
+  if ! zskk::widgets-conversion-active; then
+    return 1
+  fi
+
+  local current=${ZSKK_STATE[current_candidate]:-}
+  zskk::widgets-remove-suffix "${current}"
+  zskk::conversion-cancel
+  local reading=${REPLY}
+  if [[ -n ${reading} ]]; then
+    LBUFFER+="${reading}"
+    ZSKK_STATE[preedit]="${reading}"
+  fi
+  zskk::widgets-update-status
+  return 0
+}
+
+# Pure handler used by widget wrappers to process printable input.
+function zskk::widgets-handle-insert {
+  emulate -L zsh -o extended_glob
+
+  local char=$1
+  local mode=${ZSKK_STATE[mode]:-hiragana}
+
+  if [[ -z ${char} ]]; then
+    REPLY=""
+    return 1
+  fi
+
+  if (( ${ZSKK_STATE[candidate_count]:-0} > 0 )); then
+    zskk::conversion-commit
+  fi
+
+  if [[ ${mode} == direct ]]; then
+    REPLY="${char}"
+    return 1
+  fi
+
+  zskk::input-feed "${mode}" "${char}"
+  local committed=${REPLY}
+  if [[ -n ${committed} ]]; then
+    LBUFFER+="${committed}"
+  fi
+  zskk::widgets-update-status
+  REPLY=${committed}
+  return 0
+}
+
+# Handle backspace and keep zskk state consistent.
+function zskk::widgets-handle-backspace {
+  emulate -L zsh
+
+  if (( ${ZSKK_STATE[candidate_count]:-0} > 0 )); then
+    zskk::widgets-cancel
+    return 0
+  fi
+
+  local composing=${ZSKK_STATE[composing]:-}
+  if [[ -n ${composing} ]]; then
+    ZSKK_STATE[composing]=${composing[1,${#composing}-1]}
+    zskk::widgets-update-status
+    return 0
+  fi
+
+  local pre=${ZSKK_STATE[preedit]:-}
+  if [[ -n ${pre} ]]; then
+    zskk::widgets-remove-suffix "${pre[-1]}"
+    ZSKK_STATE[preedit]=${pre[1,${#pre}-1]}
+    zskk::widgets-update-status
+    return 0
+  fi
+
+  return 1
+}
+
+# Toggle between direct and hiragana mode (temporary helper).
+function zskk::widgets-toggle-mode {
+  emulate -L zsh
+
+  if (( ${ZSKK_STATE[candidate_count]:-0} > 0 )); then
+    zskk::conversion-commit
+  fi
+
+  local current=${ZSKK_STATE[mode]:-direct}
+  if [[ ${current} == direct ]]; then
+    ZSKK_STATE[mode]=hiragana
+  else
+    ZSKK_STATE[mode]=direct
+    zskk::conversion-reset
+    zskk::input-reset
+  fi
+  zskk::widgets-update-status
+  return 0
+}
+
+# ZLE widget: intercepted self-insert.
+function zskk::widget-self-insert {
+  emulate -L zsh -o extended_glob
+
+  local char=${KEYS:-}
+  if zskk::widgets-handle-insert "${char}"; then
+    zskk::widgets-call-original self-insert "$@"
+  fi
+}
+
+# ZLE widget: backward delete.
+function zskk::widget-backspace {
+  emulate -L zsh
+
+  if zskk::widgets-handle-backspace; then
+    return
+  fi
+
+  if zskk::widgets-call-original backward-delete-char "$@"; then
+    return
+  fi
+}
+
+# ZLE widget: toggle mode hotkey.
+function zskk::widget-toggle-mode {
+  emulate -L zsh
+  zskk::widgets-toggle-mode
+}
+
+# ZLE widget: space / next candidate.
+function zskk::widget-convert-next {
+  emulate -L zsh
+
+  if [[ ${ZSKK_STATE[mode]:-direct} == direct ]]; then
+    zskk::widgets-call-original self-insert "$@"
+    return
+  fi
+
+  if zskk::widgets-conversion-active; then
+    zskk::widgets-cycle-next
+  else
+    if ! zskk::widgets-start-conversion; then
+      zskk::widgets-call-original self-insert "$@"
+    fi
+  fi
+}
+
+# ZLE widget: previous candidate.
+function zskk::widget-convert-prev {
+  emulate -L zsh
+
+  if [[ ${ZSKK_STATE[mode]:-direct} == direct ]]; then
+    return
+  fi
+
+  if zskk::widgets-conversion-active; then
+    zskk::widgets-cycle-prev
+  else
+    if ! zskk::widgets-start-conversion; then
+      return
+    fi
+  fi
+}
+
+# ZLE widget: commit current candidate (Ctrl-J).
+function zskk::widget-convert-commit {
+  emulate -L zsh
+
+  if zskk::widgets-commit; then
+    zskk::widgets-call-original self-insert "$@"
+  fi
+}
+
+# ZLE widget: cancel conversion (Ctrl-G).
+function zskk::widget-convert-cancel {
+  emulate -L zsh
+
+  if zskk::widgets-cancel; then
+    return
+  fi
+}
+
+# ZLE widget: accept line, ensuring pending state is flushed.
+function zskk::widget-accept-line {
+  emulate -L zsh
+
+  if (( ${ZSKK_STATE[candidate_count]:-0} > 0 )); then
+    zskk::widgets-commit
+  else
+    zskk::widgets-flush-composing
+    zskk::conversion-reset
+  fi
+  zskk::input-reset
+  zskk::widgets-update-status
+
+  zskk::widgets-call-original accept-line "$@"
+}
+

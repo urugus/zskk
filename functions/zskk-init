@@ -17,6 +17,7 @@ function zskk-init {
     zskk-dict
     zskk-input
     zskk-engine
+    zskk-widgets
   )
   for module in ${modules}; do
     local path=${plugin_root}/functions/${module}
@@ -32,6 +33,7 @@ function zskk-init {
   fi
   zskk::input-init
   zskk::engine-init
+  zskk::widgets-init
   zskk::install-widgets
 }
 
@@ -97,7 +99,7 @@ function zskk::prepare-state {
   ZSKK_CACHE=()
 }
 
-# Register placeholder widgets so future steps can replace them with real logic.
+# Register widgets and bind keys used by zskk.
 function zskk::install-widgets {
   emulate -L zsh
 
@@ -105,35 +107,41 @@ function zskk::install-widgets {
   ZSKK_BOUND_WIDGETS=()
 
   local keymap="${ZSKK_CONFIG[keymap]}"
-  local -a base_widgets=(
-    self-insert
-    backward-delete-char
-    accept-line
-    vi-cmd-mode
+
+  local -A overrides=(
+    self-insert zskk::widget-self-insert
+    backward-delete-char zskk::widget-backspace
+    accept-line zskk::widget-accept-line
   )
 
-  local widget
-  for widget in ${base_widgets}; do
-    local zle_name="zskk-${widget}"
-    if ! zle -l | grep -Fxq -- "${zle_name}"; then
-      zle -N "${zle_name}" zskk::widget-pass-through
+  local widget handler alias
+  for widget handler in ${(kv)overrides}; do
+    alias="zskk-orig-${widget}"
+    if zle -A "${widget}" "${alias}" 2>/dev/null; then
+      zskk::widgets-register-original "${widget}" "${alias}"
+      ZSKK_BOUND_WIDGETS+=("override:${widget}:${alias}")
+      zle -N "${widget}" "${handler}"
     fi
-    ZSKK_BOUND_WIDGETS+=("${keymap}:${widget}:${zle_name}")
   done
 
-  # Bindkey operations are deferred until the conversion widgets are implemented.
-}
+  local -A custom=(
+    zskk-toggle-mode zskk::widget-toggle-mode
+    zskk-convert-next zskk::widget-convert-next
+    zskk-convert-prev zskk::widget-convert-prev
+    zskk-convert-commit zskk::widget-convert-commit
+    zskk-convert-cancel zskk::widget-convert-cancel
+  )
 
-# Simple placeholder widget that forwards to the original ZLE widget.
-function zskk::widget-pass-through {
-  emulate -L zsh
+  local name function_name
+  for name function_name in ${(kv)custom}; do
+    zle -N "${name}" "${function_name}"
+    ZSKK_BOUND_WIDGETS+=("custom:${name}")
+  done
 
-  if [[ -n ${WIDGET:-} ]]; then
-    local original=${WIDGET#zskk-}
-    if zle -la | grep -Fxq -- "${original}"; then
-      zle "${original}" -- "$@"
-      return $?
-    fi
-  fi
-  return 0
+  zskk::widgets-update-status
+
+  zskk::widgets-bindkey "${keymap}" ' ' zskk-convert-next
+  zskk::widgets-bindkey "${keymap}" '^J' zskk-convert-commit
+  zskk::widgets-bindkey "${keymap}" '^G' zskk-convert-cancel
+  zskk::widgets-bindkey "${keymap}" '^]' zskk-toggle-mode
 }
