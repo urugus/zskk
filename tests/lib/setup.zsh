@@ -37,6 +37,8 @@ function zskk::test-reset-state {
     lookup_key ""
     candidate_count 0
     candidate_index -1
+    current_candidate ""
+    last_commit ""
   )
 
   typeset -gA ZSKK_CACHE

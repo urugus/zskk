@@ -222,8 +222,13 @@ function zskk::input-feed {
   local committed=${REPLY}
   local remainder=${REPLY2}
 
+  local reading=${ZSKK_STATE[preedit]:-}
+  if [[ -n ${committed} ]]; then
+    reading+="${committed}"
+  fi
+
+  ZSKK_STATE[preedit]="${reading}"
   ZSKK_STATE[composing]="${remainder}"
-  ZSKK_STATE[preedit]="${remainder}"
   REPLY=${committed}
 }
 
@@ -254,8 +259,30 @@ function zskk::input-flush {
     fi
   fi
 
+  local reading=${ZSKK_STATE[preedit]:-}
+  local skip_append=0
+  if [[ -n ${output} ]]; then
+    local prev_last=""
+    if [[ -n ${reading} ]]; then
+      local -a _read_chars=(${(s::)reading})
+      prev_last=${_read_chars[-1]}
+    fi
+
+    if [[ ${buffer} == 'n' ]]; then
+      if [[ ${output} == 'ん' && ${prev_last} == 'ん' ]]; then
+        skip_append=1
+      elif [[ ${output} == 'ン' && ${prev_last} == 'ン' ]]; then
+        skip_append=1
+      fi
+    fi
+  fi
+
+  if (( ! skip_append )) && [[ -n ${output} ]]; then
+    reading+="${output}"
+  fi
+
+  ZSKK_STATE[preedit]="${reading}"
   ZSKK_STATE[composing]="${rest}"
-  ZSKK_STATE[preedit]="${rest}"
   REPLY=${output}
 }
 
@@ -296,3 +323,150 @@ function zskk::hiragana-to-katakana {
   done
   REPLY=${out}
 }
+
+# --- Conversion pipeline helpers -------------------------------------------------
+
+# zskk::conversion-begin -- finalize reading and initialize candidate selection.
+# Optionally accepts an explicit reading and okuri; otherwise flushes current input.
+function zskk::conversion-begin {
+  emulate -L zsh -o extended_glob
+
+  local reading=$1
+  local okuri=${2:-${ZSKK_STATE[okuri]:-}}
+
+  if [[ -z ${reading} ]]; then
+    if [[ -n ${ZSKK_STATE[composing]:-} ]]; then
+      zskk::input-flush "${ZSKK_STATE[mode]:-hiragana}"
+    fi
+    reading=${ZSKK_STATE[preedit]:-}
+  fi
+
+  ZSKK_STATE[last_commit]=""
+
+  if [[ -z ${reading} ]]; then
+    zskk::conversion-reset
+    REPLY=""
+    return 1
+  fi
+
+  local rc=0
+  if zskk::engine-begin "${reading}" "${okuri}"; then
+    rc=0
+  else
+    rc=1
+  fi
+
+  ZSKK_STATE[preedit]="${REPLY}"
+  ZSKK_STATE[current_candidate]="${REPLY}"
+  return ${rc}
+}
+
+# zskk::conversion-current -- refresh current candidate value.
+function zskk::conversion-current {
+  emulate -L zsh
+
+  local rc=0
+  if ! zskk::engine-current; then
+    rc=1
+  fi
+  ZSKK_STATE[current_candidate]="${REPLY}"
+  ZSKK_STATE[preedit]="${REPLY}"
+  return ${rc}
+}
+
+# zskk::conversion-next -- advance to next candidate (with wrap-around).
+function zskk::conversion-next {
+  emulate -L zsh
+
+  local rc=0
+  if ! zskk::engine-next; then
+    rc=1
+  fi
+  ZSKK_STATE[current_candidate]="${REPLY}"
+  ZSKK_STATE[preedit]="${REPLY}"
+  return ${rc}
+}
+
+# zskk::conversion-prev -- step back to previous candidate.
+function zskk::conversion-prev {
+  emulate -L zsh
+
+  local rc=0
+  if ! zskk::engine-prev; then
+    rc=1
+  fi
+  ZSKK_STATE[current_candidate]="${REPLY}"
+  ZSKK_STATE[preedit]="${REPLY}"
+  return ${rc}
+}
+
+# zskk::conversion-select -- choose candidate by index.
+function zskk::conversion-select {
+  emulate -L zsh
+
+  local index=${1:-0}
+  local rc=0
+  if ! zskk::engine-select "${index}"; then
+    rc=1
+  fi
+  ZSKK_STATE[current_candidate]="${REPLY}"
+  ZSKK_STATE[preedit]="${REPLY}"
+  return ${rc}
+}
+
+# zskk::conversion-list -- export current candidates (after okuri application).
+function zskk::conversion-list {
+  emulate -L zsh
+
+  if zskk::engine-list; then
+    return 0
+  fi
+
+  if [[ -z ${ZSKK_STATE[current_candidate]:-} ]]; then
+    ZSKK_STATE[current_candidate]="${REPLY}"
+    ZSKK_STATE[preedit]="${REPLY}"
+  fi
+  return 1
+}
+
+# zskk::conversion-commit -- accept the current candidate and reset state.
+function zskk::conversion-commit {
+  emulate -L zsh
+
+  local rc=0
+  if ! zskk::conversion-current; then
+    rc=1
+  fi
+
+  local output=${REPLY}
+  ZSKK_STATE[last_commit]="${output}"
+
+  zskk::conversion-reset
+  zskk::input-reset
+  ZSKK_STATE[preedit]=""
+
+  REPLY=${output}
+  return ${rc}
+}
+
+# zskk::conversion-cancel -- abort conversion and return original reading.
+function zskk::conversion-cancel {
+  emulate -L zsh
+
+  local reading=${ZSKK_STATE[lookup_key]:-}
+  zskk::conversion-reset
+  zskk::input-reset
+  REPLY="${reading}"
+}
+
+# zskk::conversion-reset -- clear engine-driven candidate state.
+function zskk::conversion-reset {
+  emulate -L zsh
+
+  zskk::engine-reset
+  if typeset -p ZSKK_STATE &>/dev/null; then
+    ZSKK_STATE[current_candidate]=""
+    ZSKK_STATE[preedit]=""
+  fi
+}
+
