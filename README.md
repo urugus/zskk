@@ -22,7 +22,13 @@ zskk は Zsh 向けの SKK ライクなかな漢字変換プラグインです�
    fpath=(/path/to/zskk/functions $fpath)
    source /path/to/zskk/zskk.plugin.zsh
    ```
-   プラグインマネージャ (antidote, zinit など) を使用する場合は、同様に `zskk.plugin.zsh` を autoload 対象に設定してください。
+3. zinit を利用する場合は、次の設定を `.zshrc` に追記します。
+   ```zsh
+   zinit ice wait lucid
+   zinit light urugus/zskk
+   # 辞書やウィジェット設定を zstyle で調整する場合はここに追記
+   ```
+   `zinit light` で読み込むと、`zskk.plugin.zsh` が自動的に source され、`functions/` 以下が `fpath` に追加されます。外部辞書を使う場合は同じファイル内で `export ZSKK_DICT_PATH=...` を定義してください。
 
 ## 使い始める
 ターミナルで Zsh を起動した状態で `source zskk.plugin.zsh` を実行すると、`convert-next` などの ZLE ウィジェットがバインドされ、スペースキーで変換が開始されます。辞書未初期化時には警告が表示されるため、`ZSKK_DICT_PATH` か `zstyle ':zskk:dict' path` で辞書を指定してください。
