@@ -1,0 +1,298 @@
+#autoload
+
+# zskk::input-init -- prepare romanization tables and reset input buffers.
+function zskk::input-init {
+  emulate -L zsh -o extended_glob
+
+  zskk::roma-init
+  zskk::input-reset
+}
+
+# zskk::input-reset -- clear composing buffers.
+function zskk::input-reset {
+  emulate -L zsh
+
+  if typeset -p ZSKK_STATE &>/dev/null; then
+    ZSKK_STATE[composing]=""
+    ZSKK_STATE[preedit]=""
+  fi
+}
+
+# Build romanization tables once per session.
+function zskk::roma-init {
+  emulate -L zsh
+
+  if [[ -n ${_ZSKK_ROMA_READY:-} ]]; then
+    return 0
+  fi
+
+  typeset -gA ZSKK_ROMA_TABLE
+  ZSKK_ROMA_TABLE=(
+    a あ      i い      u う      e え      o お
+    xa ぁ     xi ぃ     xu ぅ     xe ぇ     xo ぉ
+    la ぁ     li ぃ     lu ぅ     le ぇ     lo ぉ
+    ka か      ki き      ku く      ke け      ko こ
+    ga が      gi ぎ      gu ぐ      ge げ      go ご
+    kya きゃ   kyi きぃ   kyu きゅ   kye きぇ   kyo きょ
+    gya ぎゃ   gyi ぎぃ   gyu ぎゅ   gye ぎぇ   gyo ぎょ
+    sa さ      shi し     si し      su す      se せ      so そ
+    za ざ      ji じ     zi じ      zu ず      ze ぜ      zo ぞ
+    sha しゃ   sya しゃ   shu しゅ   syu しゅ   sho しょ   syo しょ
+    she しぇ   sye しぇ   ja じゃ    jya じゃ    zya じゃ
+    ju じゅ    jyu じゅ   zyu じゅ   jo じょ    jyo じょ    zyo じょ
+    ta た      chi ち     ti ち      tsu つ      tu つ      te て      to と
+    da だ      di ぢ      du づ      de で       do ど
+    cha ちゃ   tya ちゃ   cya ちゃ   chu ちゅ    tyu ちゅ   cyu ちゅ
+    cho ちょ   tyo ちょ   cyo ちょ   che ちぇ    tye ちぇ   cye ちぇ
+    tsa つぁ   tsi つぃ   tse つぇ   tso つぉ
+    tha てぁ   thi てぃ   thu てゅ   the てぇ   tho てょ
+    dha でぁ   dhi でぃ   dhu でゅ   dhe でぇ   dho でょ
+    na な      ni に      nu ぬ      ne ね      no の
+    nya にゃ   nyi にぃ   nyu にゅ   nye にぇ   nyo にょ
+    ha は      hi ひ      fu ふ      hu ふ      he へ      ho ほ
+    ba ば      bi び      bu ぶ      be べ      bo ぼ
+    pa ぱ      pi ぴ      pu ぷ      pe ぺ      po ぽ
+    hya ひゃ   hyi ひぃ   hyu ひゅ   hye ひぇ   hyo ひょ
+    bya びゃ   byi びぃ   byu びゅ   bye びぇ   byo びょ
+    pya ぴゃ   pyi ぴぃ   pyu ぴゅ   pye ぴぇ   pyo ぴょ
+    fa ふぁ    fi ふぃ    fe ふぇ    fo ふぉ
+    fya ふゃ   fyu ふゅ   fyo ふょ
+    fwa ふぁ   fwi ふぃ   fwu ふぅ   fwe ふぇ   fwo ふぉ
+    ma ま      mi み      mu む      me め      mo も
+    mya みゃ   myi みぃ   myu みゅ   mye みぇ   myo みょ
+    ya や      yi い      yu ゆ      ye いぇ     yo よ
+    ra ら      ri り      ru る      re れ      ro ろ
+    rya りゃ   ryi りぃ   ryu りゅ   rye りぇ   ryo りょ
+    wa わ      wi うぃ     we うぇ     wo を
+    va ゔぁ    vi ゔぃ    vu ゔ      ve ゔぇ    vo ゔぉ
+    vya ゔゃ   vyi ゔぃ   vyu ゔゅ   vye ゔぇ   vyo ゔょ
+    kwa くぁ   kwi くぃ   kwu くぅ   kwe くぇ   kwo くぉ
+    gwa ぐぁ   gwi ぐぃ   gwu ぐぅ   gwe ぐぇ   gwo ぐぉ
+    xya ゃ     xyu ゅ     xyo ょ
+    lya ゃ     lyu ゅ     lyo ょ
+    xtsu っ    ltsu っ    xtu っ     ltu っ
+    xwa ゎ     lwa ゎ
+    '-' ー
+    '.' 。     ',' 、     '!' ！     '?' ？
+  )
+
+  typeset -gA ZSKK_ROMA_PREFIX
+  typeset -gA ZSKK_KATA_MAP
+  typeset -g _ZSKK_ROMA_MAX_KEY_LENGTH=0
+
+  local key
+  for key in ${(k)ZSKK_ROMA_TABLE}; do
+    (( ${#key} > _ZSKK_ROMA_MAX_KEY_LENGTH )) && _ZSKK_ROMA_MAX_KEY_LENGTH=${#key}
+    local -a keychars=(${(s::)key})
+    integer prefix_len
+    for (( prefix_len=1; prefix_len<${#keychars}; prefix_len++ )); do
+      ZSKK_ROMA_PREFIX[${(j::)keychars[1,prefix_len]}]=1
+    done
+  done
+
+  # Hiragana -> Katakana map used for mode conversion.
+  local -a hira=(
+    あ い う え お ぁ ぃ ぅ ぇ ぉ
+    か き く け こ が ぎ ぐ げ ご
+    さ し す せ そ ざ じ ず ぜ ぞ
+    た ち つ て と だ ぢ づ で ど
+    な に ぬ ね の
+    は ひ ふ へ ほ ば び ぶ べ ぼ ぱ ぴ ぷ ぺ ぽ
+    ま み む め も
+    や ゆ よ
+    ら り る れ ろ
+    わ を ん
+    ゃ ゅ ょ っ ゔ ゎ
+  )
+  local -a kata=(
+    ア イ ウ エ オ ァ ィ ゥ ェ ォ
+    カ キ ク ケ コ ガ ギ グ ゲ ゴ
+    サ シ ス セ ソ ザ ジ ズ ゼ ゾ
+    タ チ ツ テ ト ダ ヂ ヅ デ ド
+    ナ ニ ヌ ネ ノ
+    ハ ヒ フ ヘ ホ バ ビ ブ ベ ボ パ ピ プ ペ ポ
+    マ ミ ム メ モ
+    ヤ ユ ヨ
+    ラ リ ル レ ロ
+    ワ ヲ ン
+    ャ ュ ョ ッ ヴ ヮ
+  )
+
+  local i max=${#hira}
+  for (( i=1; i<=max; i++ )); do
+    ZSKK_KATA_MAP[${hira[i]}]=${kata[i]}
+  done
+
+  typeset -g _ZSKK_ROMA_READY=1
+}
+
+# Convert roman buffer into kana output. Leaves remainder in REPLY2.
+function zskk::roma-consume {
+  emulate -L zsh -o extended_glob
+
+  local mode=${1:-hiragana}
+  local buffer=${2:-}
+
+  zskk::roma-init
+
+  local produced=""
+  local pending=${buffer}
+
+  while [[ -n ${pending} ]]; do
+    local -a chars=(${(s::)pending})
+    local matched=""
+    integer matched_len=0
+    integer limit=${#chars}
+    if (( limit > _ZSKK_ROMA_MAX_KEY_LENGTH )); then
+      limit=_ZSKK_ROMA_MAX_KEY_LENGTH
+    fi
+
+    integer take
+    for (( take=limit; take>0; take-- )); do
+      local chunk=${(j::)chars[1,take]}
+      chunk=${chunk:l}
+      if [[ -n ${ZSKK_ROMA_TABLE[$chunk]-} ]]; then
+        matched=${ZSKK_ROMA_TABLE[$chunk]}
+        matched_len=take
+        break
+      fi
+    done
+
+    if (( matched_len )); then
+      zskk::kana-apply-mode "${mode}" "${matched}"
+      local converted=${REPLY}
+      produced+=${converted}
+      pending=${(j::)chars[matched_len+1,-1]}
+      continue
+    fi
+
+    local lower_pending=${pending:l}
+
+    if (( ${#chars} >= 2 )); then
+      local first=${chars[1]:l}
+      local second=${chars[2]:l}
+      if [[ ${first} == ${second} && ${first} == [bcdfghjklmpqrstvwxyz] ]]; then
+        local small='っ'
+        [[ ${mode} == katakana ]] && small='ッ'
+        produced+=${small}
+        pending=${(j::)chars[2,-1]}
+        continue
+      fi
+      if [[ ${first} == 'n' && ${second} != [aeiouy] ]]; then
+        local syll='ん'
+        [[ ${mode} == katakana ]] && syll='ン'
+        produced+=${syll}
+        pending=${(j::)chars[2,-1]}
+        continue
+      fi
+    else
+      if [[ ${lower_pending} == 'n' ]]; then
+        break
+      fi
+    fi
+
+    if [[ -n ${ZSKK_ROMA_PREFIX[${lower_pending}]:-} ]]; then
+      break
+    fi
+
+    local fallback=${chars[1]}
+    produced+=${fallback}
+    pending=${(j::)chars[2,-1]}
+  done
+
+  REPLY=${produced}
+  typeset -g REPLY2=${pending}
+  return 0
+}
+
+# Feed a single character into the romanization buffer and return committed text.
+function zskk::input-feed {
+  emulate -L zsh -o extended_glob
+
+  local mode=${1:-${ZSKK_STATE[mode]:-hiragana}}
+  local char=${2:-}
+  if [[ -z ${char} ]]; then
+    REPLY=""
+    return 0
+  fi
+
+  local buffer="${ZSKK_STATE[composing]:-}${char}"
+  zskk::roma-consume "${mode}" "${buffer}"
+
+  local committed=${REPLY}
+  local remainder=${REPLY2}
+
+  ZSKK_STATE[composing]="${remainder}"
+  ZSKK_STATE[preedit]="${remainder}"
+  REPLY=${committed}
+}
+
+# Flush remaining buffer when confirming pre-edit text.
+function zskk::input-flush {
+  emulate -L zsh -o extended_glob
+
+  local mode=${1:-${ZSKK_STATE[mode]:-hiragana}}
+  local buffer="${ZSKK_STATE[composing]:-}"
+  if [[ -z ${buffer} ]]; then
+    REPLY=""
+    return 0
+  fi
+
+  zskk::roma-consume "${mode}" "${buffer}"
+  local output=${REPLY}
+  local rest=${REPLY2}
+
+  if [[ -n ${rest} ]]; then
+    if [[ ${rest:l} == 'n' ]]; then
+      local syll='ん'
+      [[ ${mode} == katakana ]] && syll='ン'
+      output+=${syll}
+      rest=${rest#?}
+    else
+      output+=${rest}
+      rest=""
+    fi
+  fi
+
+  ZSKK_STATE[composing]="${rest}"
+  ZSKK_STATE[preedit]="${rest}"
+  REPLY=${output}
+}
+
+# Apply target mode to generated kana (hiragana -> katakana when requested).
+function zskk::kana-apply-mode {
+  emulate -L zsh
+
+  local mode=${1:-hiragana}
+  local text=${2:-}
+  if [[ -z ${text} ]]; then
+    REPLY=""
+    return 0
+  fi
+
+  if [[ ${mode} == katakana ]]; then
+    zskk::hiragana-to-katakana "${text}"
+    return 0
+  fi
+
+  REPLY=${text}
+}
+
+function zskk::hiragana-to-katakana {
+  emulate -L zsh
+
+  zskk::roma-init
+  local text=${1:-}
+  if [[ -z ${text} ]]; then
+    REPLY=""
+    return 0
+  fi
+
+  local -a chars=(${(s::)text})
+  local out=""
+  local ch
+  for ch in ${chars[@]}; do
+    out+=${ZSKK_KATA_MAP[${ch}]:-${ch}}
+  done
+  REPLY=${out}
+}

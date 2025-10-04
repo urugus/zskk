@@ -9,13 +9,26 @@ function zskk-init {
   fi
   typeset -g _ZSKK_INITIALIZED=1
 
-  autoload -Uz zskk-dict
+  if [[ -z ${_ZSKK_DICT_MODULE_SOURCED:-} ]]; then
+    if [[ -r ${ZSKK_PLUGIN_ROOT}/functions/zskk-dict ]]; then
+      source ${ZSKK_PLUGIN_ROOT}/functions/zskk-dict
+    fi
+    typeset -g _ZSKK_DICT_MODULE_SOURCED=1
+  fi
+
+  if [[ -z ${_ZSKK_INPUT_MODULE_SOURCED:-} ]]; then
+    if [[ -r ${ZSKK_PLUGIN_ROOT}/functions/zskk-input ]]; then
+      source ${ZSKK_PLUGIN_ROOT}/functions/zskk-input
+    fi
+    typeset -g _ZSKK_INPUT_MODULE_SOURCED=1
+  fi
 
   zskk::load-config "$@"
   zskk::prepare-state
   if ! zskk::dict-init; then
     print -u2 -- "zskk: warning: dictionary initialization failed"
   fi
+  zskk::input-init
   zskk::install-widgets
 }
 
@@ -67,6 +80,7 @@ function zskk::prepare-state {
   ZSKK_STATE=(
     mode "${ZSKK_CONFIG[initial_mode]}"
     composing ""
+    preedit ""
     okuri ""
     candidates ""
   )
