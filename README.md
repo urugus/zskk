@@ -33,6 +33,15 @@ zskk は Zsh 向けの SKK ライクなかな漢字変換プラグインです�
 ## 使い始める
 ターミナルで Zsh を起動した状態で `source zskk.plugin.zsh` を実行すると、`convert-next` などの ZLE ウィジェットがバインドされ、スペースキーで変換が開始されます。辞書未初期化時には警告が表示されるため、`ZSKK_DICT_PATH` か `zstyle ':zskk:dict' path` で辞書を指定してください。
 
+## 操作方法
+デフォルトバインディングは `AGENTS.md` と同じくスペースと制御キー中心です。主要操作は以下のとおりです。
+- かな読みを入力してスペース (`convert-next`) を押すと最初の候補が表示されます。
+- `Ctrl-K` (`convert-prev`) で前の候補、スペースで次の候補に移動します。
+- `Ctrl-J` (`convert-commit`) で候補を確定、`Ctrl-G` (`convert-cancel`) で変換を取り消してプレーンな読みを残します。
+- `Ctrl-]` (`toggle-mode`) でひらがな/カタカナモードを切り替えます。
+- テキスト挿入中に `toggle-mode` を使うと、その後の `convert-next` がカタカナ候補を優先します。
+これらの割り当ては `zstyle ':zskk:bindkey'` や `ZSKK_BINDKEY_*` 環境変数で変更可能です。
+
 ## 設定
 - zstyle による例:
   ```sh
