@@ -472,7 +472,7 @@ function zskk::widget-self-insert {
   emulate -L zsh -o extended_glob
 
   local char=${KEYS:-}
-  if zskk::widgets-handle-insert "${char}"; then
+  if ! zskk::widgets-handle-insert "${char}"; then
     zskk::widgets-call-original self-insert "$@"
   fi
 }
