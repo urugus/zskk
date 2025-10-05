@@ -57,7 +57,7 @@ function zskk::widgets-call-original {
   fi
 
   # Directly call the widget
-  zle "${original}" -- "$@"
+  zle ${original}
   return $?
 }
 
