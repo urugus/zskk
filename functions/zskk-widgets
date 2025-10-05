@@ -50,13 +50,15 @@ function zskk::widgets-call-original {
   local logical=$1
   shift
   local original=${ZSKK_WIDGET_ORIGINAL[${logical}]:-}
-  [[ -z ${original} ]] && return 1
 
-  if zle -la | grep -Fxq -- "${original}"; then
-    zle ${original} -- "$@"
-    return $?
+  if [[ -z ${original} ]]; then
+    print -u2 "zskk: no original widget registered for '${logical}'"
+    return 1
   fi
-  return 1
+
+  # Directly call the widget
+  zle "${original}" -- "$@"
+  return $?
 }
 
 function zskk::widgets-bindkey {
