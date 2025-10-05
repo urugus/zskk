@@ -52,10 +52,6 @@ function zskk::widgets-call-original {
   local original=${ZSKK_WIDGET_ORIGINAL[${logical}]:-}
   [[ -z ${original} ]] && return 1
 
-  if [[ -z ${ZLE_LINE_EDITOR:-} ]]; then
-    return 1
-  fi
-
   if zle -la | grep -Fxq -- "${original}"; then
     zle ${original} -- "$@"
     return $?
