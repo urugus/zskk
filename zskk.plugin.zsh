@@ -26,8 +26,9 @@ for module in ${required_modules}; do
   fi
 done
 
-# Autoload public entry points.
-autoload -Uz zskk-init zskk-unload
+# Load public entry points directly.
+source ${ZSKK_PLUGIN_ROOT}/functions/zskk-init
+source ${ZSKK_PLUGIN_ROOT}/functions/zskk-unload
 
 # Decide whether to run automatic initialization when the plugin is sourced.
 function zskk::maybe-auto-init {

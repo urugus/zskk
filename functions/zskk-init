@@ -20,9 +20,9 @@ function zskk-init {
     zskk-widgets
   )
   for module in ${modules}; do
-    local module_path=${plugin_root}/functions/${module}
-    if [[ -r ${module_path} ]]; then
-      source ${module_path}
+    local module_file=${plugin_root}/functions/${module}
+    if [[ -r ${module_file} ]]; then
+      source ${module_file}
     fi
   done
 
