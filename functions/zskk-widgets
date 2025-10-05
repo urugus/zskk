@@ -193,12 +193,10 @@ function zskk::widgets-update-status {
 
   ZSKK_WIDGET_LAST_MESSAGE=${message}
 
-  if [[ -n ${ZLE_LINE_EDITOR:-} ]]; then
-    if [[ -n ${message} ]]; then
-      zle -M -- "${message}"
-    else
-      zle -M -- ""
-    fi
+  if [[ -n ${message} ]]; then
+    zle -M -- "${message}"
+  else
+    zle -M -- ""
   fi
 }
 
